@@ -116,5 +116,116 @@ SwapTotal:       2097148 kB
 SwapFree:        2036056 kB
 ````
 
+### II. Partitioning. 
 
+On commence par check nos disk : 
+````
+[mmederic@storage ~]$ lsblk
+NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+sda           8:0    0   20G  0 disk 
+├─sda1        8:1    0    1G  0 part /boot
+└─sda2        8:2    0   19G  0 part 
+  ├─rl-root 253:0    0   17G  0 lvm  /
+  └─rl-swap 253:1    0    2G  0 lvm  [SWAP]
+sdb           8:16   0   10G  0 disk 
+sdc           8:32   0   10G  0 disk 
+sdd           8:48   0   10G  0 disk 
+sde           8:64   0   10G  0 disk 
+sdf           8:80   0   10G  0 disk 
+sr0          11:0    1 1024M  0 rom
+````
 
+Puis on commence avec le PV de sdb : 
+````
+[mmederic@storage ~]$ sudo pvcreate /dev/sdb
+  Physical volume "/dev/sdb" successfully created.
+[mmederic@storage ~]$ sudo pvs
+  PV         VG Fmt  Attr PSize   PFree 
+  /dev/sda2  rl lvm2 a--  <19.00g     0 
+  /dev/sdb      lvm2 ---   10.00g 10.00g
+````
+
+On suit avec le VG : 
+````
+[mmederic@storage ~]$ sudo vgcreate storage /dev/sdb
+  Volume group "storage" successfully created
+````
+
+Puis on continue avec smol_data & big_data: 
+````
+[mmederic@storage ~]$ sudo lvcreate -L 2G storage -n smol_data
+  Logical volume "smol_data" created.
+[mmederic@storage ~]$ sudo lvcreate -L 7.99G storage -n big_data
+  Rounding up size to full physical extent 7.99 GiB
+  Logical volume "big_data" created.
+[mmederic@storage ~]$ sudo lvs
+  LV        VG      Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  root      rl      -wi-ao---- <17.00g                                                    
+  swap      rl      -wi-ao----   2.00g                                                    
+  big_data  storage -wi-a-----   7.99g                                                    
+  smol_data storage -wi-a-----   2.00g   
+````
+
+On va créer le système de fichier en ext4 :
+````
+[mmederic@storage ~]$ sudo mkfs.ext4 /dev/storage/smol_data
+mke2fs 1.46.5 (30-Dec-2021)
+Creating filesystem with 524288 4k blocks and 131072 inodes
+Filesystem UUID: 0a2532ab-a859-4d42-ab0f-97a9e8e27e3b
+Superblock backups stored on blocks: 
+        32768, 98304, 163840, 229376, 294912
+
+Allocating group tables: done                            
+Writing inode tables: done                            
+Creating journal (16384 blocks): done
+Writing superblocks and filesystem accounting information: done 
+
+[mmederic@storage ~]$ sudo mkfs.ext4 /dev/storage/big_data
+mke2fs 1.46.5 (30-Dec-2021)
+Creating filesystem with 2095104 4k blocks and 524288 inodes
+Filesystem UUID: 7de4c21e-9d95-40df-bab7-9dc13de10d99
+Superblock backups stored on blocks: 
+        32768, 98304, 163840, 229376, 294912, 819200, 884736, 1605632
+
+Allocating group tables: done                            
+Writing inode tables: done                            
+Creating journal (16384 blocks): done
+Writing superblocks and filesystem accounting information: done 
+````
+
+On va créer et monter les partitions : 
+````
+[mmederic@storage ~]$ sudo mkdir /mnt/lvm_storage/
+[mmederic@storage ~]$ sudo mkdir /mnt/lvm_storage/smol
+[mmederic@storage ~]$ sudo mount /dev/storage/smol_data /mnt/lvm_storage/smol
+[mmederic@storage ~]$ sudo mkdir /mnt/lvm_storage/big
+[mmederic@storage ~]$ sudo mount /dev/storage/big_data /mnt/lvm_storage/big
+````
+
+Les partitions sont bien montées : 
+````
+[mmederic@storage system]$ df -h
+Filesystem                     Size  Used Avail Use% Mounted on
+devtmpfs                       4.0M     0  4.0M   0% /dev
+tmpfs                          385M     0  385M   0% /dev/shm
+tmpfs                          154M  3.1M  151M   3% /run
+/dev/mapper/rl-root             17G  1.8G   16G  11% /
+/dev/sda1                      960M  309M  652M  33% /boot
+tmpfs                           77M     0   77M   0% /run/user/1000
+/dev/mapper/storage-smol_data  2.0G   24K  1.8G   1% /mnt/lvm_storage/smol
+/dev/mapper/storage-big_data   7.8G   24K  7.4G   1% /mnt/lvm_storage/big
+````
+
+On umount pour le automount, on vérif et c'est bon : 
+````
+[mmederic@storage system]$ sudo umount /mnt/lvm_storage/smol
+[mmederic@storage system]$ sudo umount /mnt/lvm_storage/big
+[mmederic@storage system]$ df -h
+Filesystem           Size  Used Avail Use% Mounted on
+devtmpfs             4.0M     0  4.0M   0% /dev
+tmpfs                385M     0  385M   0% /dev/shm
+tmpfs                154M  3.1M  151M   3% /run
+/dev/mapper/rl-root   17G  1.8G   16G  11% /
+/dev/sda1            960M  309M  652M  33% /boot
+tmpfs                 77M     0   77M   0% /run/user/1000
+````
